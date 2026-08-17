@@ -6,14 +6,17 @@ use App\Http\Controllers\FrontController;
 
 
 
-Route::get('/home_page/{table_id}', [FrontController::class, 'index']);
+Route::get('/home_page/{table_id}', [FrontController::class, 'index'])->name('qr.home');
 
 
 Route::post('/submit-review', [App\Http\Controllers\FrontController::class, 'submitReview'])->name('review.submit');
-Route::get('/menu_page/{table_id}', [FrontController::class, 'menu']);
-Route::get('/cart_page/{table_id}', [FrontController::class, 'cart']);
-Route::get('/order_page/{table_id}', [FrontController::class, 'order']);
-Route::get('/category_wise_products/{category_id}/{table_id}', [FrontController::class, 'categoryWiseProducts']);
+Route::get('/menu_page/{table_id}', [FrontController::class, 'menu'])->name('qr.menu');
+Route::get('/cart_page/{table_id}', [FrontController::class, 'cart'])->name('qr.cart');
+Route::get('/order_page/{table_id}', [FrontController::class, 'order'])->name('qr.orders');
+
+Route::get('/home_page/feedback/{token}', [FrontController::class, 'feedbackForm'])->name('feedback.form');
+Route::post('/feedback/{token}', [FrontController::class, 'submitFeedback'])->name('feedback.submit');
+Route::get('/category_wise_products/{category_id}/{table_id}', [FrontController::class, 'categoryWiseProducts'])->name('qr.category');
 
 Route::post('/add-to-cart', [FrontController::class, 'addToCart']);
 Route::post('/update-cart-qty', [FrontController::class, 'updateCartQty']);

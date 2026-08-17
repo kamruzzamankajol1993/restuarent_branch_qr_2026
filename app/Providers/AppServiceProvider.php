@@ -2,142 +2,112 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\View;
-use App\Models\RestaurantSetting;
-use App\Models\TaxSetting;
+use App\Models\Customer;
+use App\Models\FoodCategory;
 use App\Models\InvoiceSetting;
 use App\Models\PosSetting;
+use App\Models\RestaurantSetting;
+use App\Models\TaxSetting;
 use App\Models\Waiter;
-use App\Models\Customer;
-use App\Models\FoodCategory; // নতুন যুক্ত করা হলো
-use Exception;
+use App\Services\QrBranchSettingResolver;
+use App\Services\QrTableContext;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\View;
+use Illuminate\Support\ServiceProvider;
+use Throwable;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         try {
-            // ১. ডাটাবেস থেকে সেটিংসের প্রথম রেকর্ডগুলো ফেচ করা হচ্ছে
-            $restaurantSetting = RestaurantSetting::first();
-            $taxSetting        = TaxSetting::first();
-            $invoiceSetting    = InvoiceSetting::first();
-            $posSetting        = PosSetting::first();
+            $settings = app(QrBranchSettingResolver::class);
+            $mainBranchId = $settings->mainBranchId();
 
-            // POS এবং Master ফাইলের মোডালের জন্য Waiter ও Customer ফেচ করা হচ্ছে
-            $waiters   = Waiter::where('status', 1)->get();
-            $customers = Customer::orderBy('name', 'asc')->get();
+            // Safe defaults for non-table pages. QR table pages override these below.
+            View::share($this->branchViewData($mainBranchId));
+            View::share('customers', Schema::hasTable('customers') ? Customer::query()->orderBy('name')->get() : collect());
 
-            // ওয়েবসাইটের ফ্রন্টএন্ডের জন্য গ্লোবাল ক্যাটাগরি ফেচ করা হচ্ছে (যাতে সব পেজে ক্যাটাগরি মেনু দেখায়)
-            $globalCategories = FoodCategory::whereNull('parent_category_id')->where('status', 1)->get();
+            View::composer('*', function ($view) use ($settings) {
+                $reference = request()->route('table_id');
+                if (!$reference) {
+                    return;
+                }
 
-            // ==========================================
-            // ২. Restaurant Settings এর ভ্যারিয়েবলগুলো
-            // ==========================================
-            $restaurantSettingName        = $restaurantSetting ? $restaurantSetting->name : null;
-            $restaurantSettingPhone       = $restaurantSetting ? $restaurantSetting->phone : null;
-            $restaurantSettingEmail       = $restaurantSetting ? $restaurantSetting->email : null;
-            $restaurantSettingWebsite     = $restaurantSetting ? $restaurantSetting->website : null;
-            $restaurantSettingappLink     = $restaurantSetting ? $restaurantSetting->app_link : null;
-            $restaurantSettingAddress     = $restaurantSetting ? $restaurantSetting->address : null;
-            $restaurantSettingOpeningTime = $restaurantSetting ? $restaurantSetting->opening_time : null;
-            $restaurantSettingClosingTime = $restaurantSetting ? $restaurantSetting->closing_time : null;
-            $restaurantSettingCurrency    = $restaurantSetting ? $restaurantSetting->currency : 'BDT';
-            $restaurantSettingIconName    = $restaurantSetting ? $restaurantSetting->icon_name : null;
-            $restaurantSettingLogo        = $restaurantSetting ? $restaurantSetting->logo : null;
-
-            // ==========================================
-            // ৩. Tax Settings এর ভ্যারিয়েবলগুলো
-            // ==========================================
-            $taxSettingVatRate            = $taxSetting ? $taxSetting->vat_rate : 0;
-            $taxSettingTaxLabel           = $taxSetting ? $taxSetting->tax_label : 'VAT';
-            $taxSettingTaxRegistrationNo  = $taxSetting ? $taxSetting->tax_registration_no : null;
-            $taxSettingIsTaxIncluded      = $taxSetting ? $taxSetting->is_tax_included : false;
-            $taxSettingServiceCharge      = $taxSetting ? $taxSetting->service_charge : 0;
-
-            // ==========================================
-            // ৪. Invoice Settings এর ভ্যারিয়েবলগুলো
-            // ==========================================
-            $invoiceSettingPrefix         = $invoiceSetting ? $invoiceSetting->prefix : 'INV-';
-            $invoiceSettingStartingNumber = $invoiceSetting ? $invoiceSetting->starting_number : 1001;
-            $invoiceSettingFooterNote     = $invoiceSetting ? $invoiceSetting->footer_note : null;
-            $invoiceSettingPaperSize      = $invoiceSetting ? $invoiceSetting->paper_size : '80mm';
-            $invoiceSettingShowLogo       = $invoiceSetting ? $invoiceSetting->show_logo : true;
-
-            // ==========================================
-            // ৫. POS Settings এর ভ্যারিয়েবলগুলো
-            // ==========================================
-            $posSettingDefaultView           = $posSetting ? $posSetting->default_view : 'Grid';
-            $posSettingItemsPerPage          = $posSetting ? $posSetting->items_per_page : 12;
-            $posSettingAutoPrintKitchen      = $posSetting ? $posSetting->auto_print_kitchen : true;
-            $posSettingAutoPrintInvoice      = $posSetting ? $posSetting->auto_print_invoice : true;
-            $posSettingRequireTableSelection = $posSetting ? $posSetting->require_table_selection : true;
-            $posSettingShowOutOfStock        = $posSetting ? $posSetting->show_out_of_stock : true;
-
-
-            // ==========================================
-            // ৬. ভিউ এর সাথে গ্লোবাল ভেরিয়েবল শেয়ার করা (View::share)
-            // ==========================================
-
-            // Restaurant
-            View::share('restaurantSettingName', $restaurantSettingName);
-            View::share('restaurantSettingPhone', $restaurantSettingPhone);
-            View::share('restaurantSettingEmail', $restaurantSettingEmail);
-            View::share('restaurantSettingWebsite', $restaurantSettingWebsite);
-            View::share('restaurantSettingappLink', $restaurantSettingappLink);
-            View::share('restaurantSettingAddress', $restaurantSettingAddress);
-            View::share('restaurantSettingOpeningTime', $restaurantSettingOpeningTime);
-            View::share('restaurantSettingClosingTime', $restaurantSettingClosingTime);
-            View::share('restaurantSettingCurrency', $restaurantSettingCurrency);
-            View::share('restaurantSettingIconName', $restaurantSettingIconName);
-            View::share('restaurantSettingLogo', $restaurantSettingLogo);
-
-            // Tax
-            View::share('taxSettingVatRate', $taxSettingVatRate);
-            View::share('taxSettingTaxLabel', $taxSettingTaxLabel);
-            View::share('taxSettingTaxRegistrationNo', $taxSettingTaxRegistrationNo);
-            View::share('taxSettingIsTaxIncluded', $taxSettingIsTaxIncluded);
-            View::share('taxSettingServiceCharge', $taxSettingServiceCharge);
-
-            // Invoice
-            View::share('invoiceSettingPrefix', $invoiceSettingPrefix);
-            View::share('invoiceSettingStartingNumber', $invoiceSettingStartingNumber);
-            View::share('invoiceSettingFooterNote', $invoiceSettingFooterNote);
-            View::share('invoiceSettingPaperSize', $invoiceSettingPaperSize);
-            View::share('invoiceSettingShowLogo', $invoiceSettingShowLogo);
-
-            // POS
-            View::share('posSettingDefaultView', $posSettingDefaultView);
-            View::share('posSettingItemsPerPage', $posSettingItemsPerPage);
-            View::share('posSettingAutoPrintKitchen', $posSettingAutoPrintKitchen);
-            View::share('posSettingAutoPrintInvoice', $posSettingAutoPrintInvoice);
-            View::share('posSettingRequireTableSelection', $posSettingRequireTableSelection);
-            View::share('posSettingShowOutOfStock', $posSettingShowOutOfStock);
-
-            // পুরো অবজেক্টগুলোও শেয়ার করা থাকলো যদি কোনো কারণে প্রয়োজন হয়
-            View::share('restaurantSetting', $restaurantSetting);
-            View::share('taxSetting', $taxSetting);
-            View::share('invoiceSetting', $invoiceSetting);
-            View::share('posSetting', $posSetting);
-
-            // রিয়েল-টাইম মোডাল এবং ওয়েবসাইটের জন্য গ্লোবাল ভেরিয়েবল
-            View::share('waiters', $waiters);
-            View::share('customers', $customers);
-            View::share('globalCategories', $globalCategories); // ওয়েবসাইটের জন্য যুক্ত করা হলো
-
-        } catch (Exception $e) {
-            // ডাটাবেস মাইগ্রেট করার সময় বা টেবিল না থাকলে যাতে অ্যাপ্লিকেশন ক্র্যাশ না করে
+                try {
+                    $table = app(QrTableContext::class)->resolve((string) $reference);
+                    $branchId = Schema::hasColumn('tables', 'branch_id') ? (int) $table->branch_id : $settings->mainBranchId();
+                    $view->with($this->branchViewData($branchId));
+                } catch (Throwable $e) {
+                    // The route controller owns the authoritative invalid/expired QR response.
+                }
+            });
+        } catch (Throwable $e) {
+            // Keep install/migration commands bootable while tables are being created.
         }
+    }
+
+    private function branchViewData(?int $branchId): array
+    {
+        $settings = app(QrBranchSettingResolver::class);
+        $restaurant = $settings->get(RestaurantSetting::class, $branchId, $branchId === null);
+        $tax = $settings->get(TaxSetting::class, $branchId, $branchId === null);
+        $invoice = $settings->get(InvoiceSetting::class, $branchId, $branchId === null);
+        $pos = $settings->get(PosSetting::class, $branchId, $branchId === null);
+
+        $categoryQuery = FoodCategory::query()->whereNull('parent_category_id')->where('status', 1);
+        if ($branchId && Schema::hasColumn('food_categories', 'branch_id')) {
+            $categoryQuery->where('branch_id', $branchId);
+        }
+
+        $waiterQuery = Waiter::query()->where('status', 1);
+        if ($branchId && Schema::hasColumn('waiters', 'branch_id')) {
+            $waiterQuery->where('branch_id', $branchId);
+        }
+
+        return [
+            'restaurantSettingName' => $restaurant?->name,
+            'restaurantSettingPhone' => $restaurant?->phone,
+            'restaurantSettingEmail' => $restaurant?->email,
+            'restaurantSettingWebsite' => $restaurant?->website,
+            'restaurantSettingappLink' => $restaurant?->app_link,
+            'restaurantSettingAddress' => $restaurant?->address,
+            'restaurantSettingOpeningTime' => $restaurant?->opening_time,
+            'restaurantSettingClosingTime' => $restaurant?->closing_time,
+            'restaurantSettingCurrency' => $restaurant?->currency ?? 'BDT',
+            'restaurantSettingIconName' => $restaurant?->icon_name,
+            'restaurantSettingLogo' => $restaurant?->logo,
+
+            'taxSettingVatRate' => $tax?->vat_rate ?? 0,
+            'taxSettingTaxLabel' => $tax?->tax_label ?? 'VAT',
+            'taxSettingTaxRegistrationNo' => $tax?->tax_registration_no,
+            'taxSettingIsTaxIncluded' => (bool) ($tax?->is_tax_included ?? false),
+            'taxSettingServiceCharge' => $tax?->service_charge ?? 0,
+
+            'invoiceSettingPrefix' => $invoice?->prefix ?? 'INV-',
+            'invoiceSettingStartingNumber' => $invoice?->starting_number ?? 1001,
+            'invoiceSettingFooterNote' => $invoice?->footer_note,
+            'invoiceSettingPaperSize' => $invoice?->paper_size ?? '80mm',
+            'invoiceSettingShowLogo' => (bool) ($invoice?->show_logo ?? true),
+
+            'posSettingDefaultView' => $pos?->default_view ?? 'Grid',
+            'posSettingItemsPerPage' => $pos?->items_per_page ?? 12,
+            'posSettingAutoPrintKitchen' => (bool) ($pos?->auto_print_kitchen ?? true),
+            'posSettingAutoPrintInvoice' => (bool) ($pos?->auto_print_invoice ?? true),
+            'posSettingRequireTableSelection' => (bool) ($pos?->require_table_selection ?? true),
+            'posSettingShowOutOfStock' => (bool) ($pos?->show_out_of_stock ?? true),
+
+            'restaurantSetting' => $restaurant,
+            'taxSetting' => $tax,
+            'invoiceSetting' => $invoice,
+            'posSetting' => $pos,
+            'waiters' => $waiterQuery->get(),
+            'globalCategories' => $categoryQuery->get(),
+        ];
     }
 }

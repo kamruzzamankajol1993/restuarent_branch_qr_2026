@@ -1,0 +1,309 @@
+:root {
+    --feedback-yellow: #fbc900;
+    --feedback-dark: #303030;
+    --feedback-line: #b7b7b7;
+    --feedback-meta: #e9e9e9;
+    --feedback-text: #111111;
+}
+
+* { box-sizing: border-box; }
+
+body.feedback-page {
+    margin: 0;
+    background: #ffffff;
+    color: var(--feedback-text);
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 13px;
+}
+
+.feedback-sheet {
+    width: min(100%, 520px);
+    margin: 0 auto 28px;
+    background: #ffffff;
+    padding: 14px 16px 26px;
+}
+
+.feedback-title {
+    margin: 0 0 22px;
+    padding: 19px 10px;
+    background: var(--feedback-yellow);
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.feedback-meta {
+    margin: 0 0 28px;
+    padding: 8px 4px 5px;
+    background: var(--feedback-meta);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.feedback-meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 18px;
+}
+
+.feedback-meta-server {
+    grid-column: 1 / -1;
+}
+
+.feedback-meta strong { font-weight: 900; }
+
+.feedback-rating-table {
+    width: 100%;
+    margin: 0 0 34px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 11px;
+}
+
+.feedback-rating-table th,
+.feedback-rating-table td {
+    border-bottom: 1px solid var(--feedback-line);
+    padding: 4px 3px;
+    vertical-align: middle;
+}
+
+.feedback-rating-table thead th {
+    font-weight: 800;
+    text-align: center;
+}
+
+.feedback-rating-table thead th:first-child,
+.feedback-rating-table tbody th {
+    width: 38%;
+}
+
+.feedback-rating-table tbody th {
+    font-weight: 800;
+    text-align: left;
+}
+
+.feedback-rating-table td {
+    text-align: center;
+}
+
+.feedback-choice {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    border: 1.4px solid #202020;
+    border-radius: 0;
+    background: #ffffff;
+    vertical-align: middle;
+    cursor: pointer;
+    position: relative;
+}
+
+.feedback-choice:checked::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    background: #1e1e1e;
+}
+
+.feedback-choice:focus-visible {
+    outline: 2px solid var(--feedback-yellow);
+    outline-offset: 2px;
+}
+
+.feedback-section {
+    margin-top: 22px;
+}
+
+.feedback-section-title {
+    width: 100%;
+    margin: 0;
+    padding: 5px 8px;
+    background: var(--feedback-dark);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1.1;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.feedback-comment-section {
+    margin-top: 0;
+    margin-bottom: 22px;
+}
+
+.feedback-comment-textarea {
+    display: block;
+    width: 100%;
+    min-height: 92px;
+    padding: 8px 9px;
+    border: 1px solid var(--feedback-line);
+    border-top: 0;
+    border-radius: 0;
+    background: #ffffff;
+    color: var(--feedback-text);
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+    box-shadow: none !important;
+    outline: none;
+}
+
+.feedback-comment-textarea:focus {
+    border-color: #8e8e8e;
+    outline: 2px solid rgba(251, 201, 0, .28);
+    outline-offset: -2px;
+}
+
+.feedback-source-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 28px;
+    padding: 4px 4px 3px;
+    border-bottom: 1px solid var(--feedback-line);
+    font-size: 11px;
+}
+
+.feedback-contact-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    min-height: 34px;
+    border-bottom: 1px solid var(--feedback-line);
+}
+
+.feedback-contact-row label {
+    min-width: 44px;
+    padding-bottom: 4px;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.feedback-line-input {
+    flex: 1;
+    width: 100%;
+    padding: 5px 2px 3px;
+    border: 0;
+    border-radius: 0;
+    outline: none;
+    background: transparent;
+    box-shadow: none !important;
+    font-size: 12px;
+}
+
+.feedback-line-input:focus {
+    border: 0;
+    outline: none;
+}
+
+.feedback-thanks {
+    margin: 20px 0 14px;
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.feedback-submit {
+    width: 100%;
+    min-height: 42px;
+    border: 0;
+    border-radius: 0;
+    background: var(--feedback-yellow);
+    color: #171717;
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.feedback-submit:hover,
+.feedback-submit:focus {
+    background: #e9ba00;
+    color: #111111;
+}
+
+.feedback-alert {
+    margin: 0 0 16px;
+    border-radius: 0;
+    font-size: 12px;
+}
+
+.feedback-success-box {
+    padding: 34px 18px 38px;
+    text-align: center;
+}
+
+.feedback-success-icon {
+    display: inline-flex;
+    width: 54px;
+    height: 54px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    border-radius: 50%;
+    background: var(--feedback-yellow);
+    color: #111;
+    font-size: 24px;
+    font-weight: 900;
+}
+
+.feedback-success-box h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.feedback-success-box p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+@media (max-width: 420px) {
+    .feedback-sheet {
+        width: 100%;
+        margin-top: 0;
+        padding: 12px 12px 24px;
+    }
+
+    .feedback-title {
+        margin-left: 0;
+        margin-right: 0;
+        font-size: 19px;
+    }
+
+    .feedback-rating-table {
+        font-size: 10px;
+    }
+
+    .feedback-rating-table thead th:first-child,
+    .feedback-rating-table tbody th {
+        width: 34%;
+    }
+}
+
+.feedback-meta-server-input {
+    display: inline-block;
+    width: min(250px, 58%);
+    margin-left: 6px;
+    border: 0;
+    border-bottom: 1px solid #777;
+    border-radius: 0;
+    background: transparent;
+    padding: 0 2px 2px;
+    font: inherit;
+    color: inherit;
+    outline: none;
+}
+
+.feedback-meta-server-input:focus {
+    border-bottom-color: #111;
+}

@@ -1,7 +1,7 @@
 @php
     // সেশন থেকে ডাটা নিয়ে কার্টের আইটেম গোনা হচ্ছে
-    $decoded_id = base64_decode($table_id ?? '');
-    $cartCount = count(session('web_cart_table_' . $decoded_id, []));
+    $decoded_id = $decoded_table_id ?? $decoded_id ?? null;
+    $cartCount = $decoded_id ? count(session('web_cart_table_' . $decoded_id, [])) : 0;
 @endphp
 
 <header class="rapp-header">
