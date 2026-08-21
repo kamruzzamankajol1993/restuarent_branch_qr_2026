@@ -26,7 +26,7 @@ body.feedback-page {
 .feedback-title {
     margin: 0 0 22px;
     padding: 19px 10px;
-    background: var(--feedback-yellow);
+    background: #152219;
     color: #ffffff;
     font-size: 22px;
     font-weight: 900;
