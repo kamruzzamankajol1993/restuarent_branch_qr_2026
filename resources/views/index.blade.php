@@ -39,7 +39,7 @@
       </div>
     </section>
 
-    <div class="d-flex flex-wrap gap-2 px-3 pt-3">
+    {{-- <div class="d-flex flex-wrap gap-2 px-3 pt-3">
       <div class="rapp-info-chip"><i class="bi bi-clock-fill"></i> Open 11am – 11pm</div>
       <div class="rapp-info-chip"><i class="bi bi-geo-alt-fill"></i> {{ $restaurantSettingAddress }}</div>
       <div class="rapp-info-chip"><i class="bi bi-star-fill"></i> 4.8 Rating</div>
@@ -52,7 +52,7 @@
         <div class="rapp-banner-sub">All ingredients sourced from local farms</div>
       </div>
       <a href="{{ url('menu_page/'.$table_id) }}" class="rapp-banner-btn ms-auto">Order Now</a>
-    </div>
+    </div> --}}
 
     <section class="rapp-section">
       <div class="rapp-section-head d-flex align-items-start justify-content-between px-3 pb-2">

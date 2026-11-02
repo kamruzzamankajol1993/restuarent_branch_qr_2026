@@ -9,6 +9,7 @@ use App\Models\Review;
 use App\Models\Table;
 use App\Services\QrTableContext;
 use App\Services\QrBranchSettingResolver;
+use App\Services\QrPublishedFood;
 use App\Models\TaxSetting;
 use App\Services\AuditLogger;
 use Illuminate\Http\Request;
@@ -32,7 +33,7 @@ class FrontController extends Controller
 
     private function branchId(Table $table): ?int
     {
-        return Schema::hasColumn('tables', 'branch_id') ? (int) $table->branch_id : null;
+        return (int) $table->branch_id;
     }
 
     private function makeQrReference(?int $branchId): string
@@ -57,25 +58,19 @@ class FrontController extends Controller
 
     private function branchFoodQuery(?int $branchId)
     {
-        $query = FoodItem::query();
-        if (Schema::hasColumn('food_items', 'branch_id') && $branchId) {
-            $query->where('branch_id', $branchId);
-        }
-        return $query;
+        return app(QrPublishedFood::class)->forBranch((int) $branchId);
     }
 
     private function branchCategoryQuery(?int $branchId)
     {
         $query = FoodCategory::query();
-        if (Schema::hasColumn('food_categories', 'branch_id') && $branchId) {
-            $query->where('branch_id', $branchId);
-        }
+        $query->where('branch_id', $branchId);
         return $query;
     }
 
     private function branchTaxSetting(?int $branchId): TaxSetting
     {
-        $setting = app(QrBranchSettingResolver::class)->get(TaxSetting::class, $branchId, false);
+        $setting = app(QrBranchSettingResolver::class)->get(TaxSetting::class);
         if (!$setting) {
             abort(503, 'Tax/settings are not configured for this branch.');
         }
@@ -118,7 +113,6 @@ class FrontController extends Controller
         $validFoodIds = collect($cart)->pluck('food_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
         $foods = $this->branchFoodQuery($branchId)
             ->whereIn('id', $validFoodIds)
-            ->where('is_available', 1)
             ->get()
             ->keyBy('id');
 
@@ -154,7 +148,6 @@ class FrontController extends Controller
         $branchId = $this->branchId($table);
 
         $featuredFoods = $this->branchFoodQuery($branchId)
-            ->where('is_available', 1)
             ->where('is_featured', 1)
             ->orderBy('id', 'desc')
             ->paginate(12);
@@ -173,16 +166,20 @@ class FrontController extends Controller
         $decoded_id = $table->id;
         $branchId = $this->branchId($table);
 
+        $search = mb_substr(trim((string) $request->query('search', '')), 0, 80);
+        $foodFilter = function ($query) use ($branchId, $search) {
+            app(QrPublishedFood::class)->apply($query, $branchId);
+            if ($search !== '') {
+                $query->where('food_items.name', 'like', '%' . $search . '%');
+            }
+        };
         $categories = $this->branchCategoryQuery($branchId)
-            ->with(['foodItems' => function ($query) use ($branchId) {
-                if (Schema::hasColumn('food_items', 'branch_id')) {
-                    $query->where('branch_id', $branchId);
-                }
-                $query->where('is_available', 1);
-            }])
+            ->with(['foodItems' => $foodFilter])
+            ->whereHas('foodItems', $foodFilter)
             ->whereNull('parent_category_id')
             ->where('status', 1)
-            ->paginate(3);
+            ->paginate(3)
+            ->withQueryString();
 
         return view('menu', [
             'table_id' => $table_id,
@@ -206,10 +203,12 @@ class FrontController extends Controller
             ->where('status', 1)
             ->firstOrFail();
 
-        $foodItems = $category->foodItems()
-            ->when(Schema::hasColumn('food_items', 'branch_id'), fn ($query) => $query->where('branch_id', $branchId))
-            ->where('is_available', 1)
-            ->paginate(12);
+        $search = mb_substr(trim((string) $request->query('search', '')), 0, 80);
+        $foodQuery = app(QrPublishedFood::class)->apply($category->foodItems()->getQuery(), $branchId);
+        if ($search !== '') {
+            $foodQuery->where('food_items.name', 'like', '%' . $search . '%');
+        }
+        $foodItems = $foodQuery->paginate(12)->withQueryString();
 
         return view('category-wise-products', compact('category', 'foodItems', 'table_id', 'decoded_id'))->with('decoded_table_id', $decoded_id);
     }
@@ -244,6 +243,22 @@ class FrontController extends Controller
         return view('cart', compact('table_id', 'decoded_id', 'cart', 'subtotal', 'vat_rate', 'vat_amount', 'service_charge_rate', 'service_amount', 'grand_total'))->with('decoded_table_id', $decoded_id);
     }
 
+    private function cartChanged(array $previous, array $current): bool
+    {
+        if (count($previous) !== count($current)) {
+            return true;
+        }
+        foreach ($previous as $item) {
+            $id = (int) ($item['food_id'] ?? 0);
+            if (!$id || !isset($current[$id])
+                || (int) ($item['qty'] ?? 0) !== (int) $current[$id]['qty']
+                || abs((float) ($item['price'] ?? 0) - (float) $current[$id]['price']) > 0.001) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function checkout(Request $request)
     {
         $request->validate([
@@ -255,20 +270,32 @@ class FrontController extends Controller
         $decoded_id = $table->id;
         $branchId = $this->branchId($table);
         $cartKey = $this->getCartKey($decoded_id);
+        $submittedCart = Session::get($cartKey, []);
         $cart = $this->refreshedCart($table);
 
+        if ($this->cartChanged($submittedCart, $cart)) {
+            return response()->json(['status' => 'error', 'message' => 'Menu availability or prices changed. Please review your cart before ordering.']);
+        }
         if (count($cart) === 0) {
             return response()->json(['status' => 'error', 'message' => 'Cart is empty!']);
         }
 
         DB::beginTransaction();
         try {
+            // Serialize all QR checkouts on this physical table, even when there is no pending order yet.
+            Table::query()->whereKey($decoded_id)->lockForUpdate()->firstOrFail();
+            // Re-evaluate publication/prices inside the transaction, not from stale session data.
+            $currentCart = $this->refreshedCart($table);
+            if (!$currentCart || $this->cartChanged($cart, $currentCart)) {
+                DB::rollBack();
+                return response()->json(['status' => 'error', 'message' => 'Cart items are no longer available for this branch.']);
+            }
             $pendingOrQrOrder = Order::where('table_id', $decoded_id)
-                ->when(Schema::hasColumn('orders', 'branch_id') && $branchId, fn ($query) => $query->where('branch_id', $branchId))
+                ->where('branch_id', $branchId)
                 ->where(function ($query) {
                     $query->whereRaw(
-                        "REPLACE(REPLACE(LOWER(TRIM(status)), '-', '_'), ' ', '_') IN (?, ?, ?, ?, ?)",
-                        ['pending', 'qr', 'qr_pending', 'qr_hold', 'hold']
+                        "REPLACE(REPLACE(LOWER(TRIM(status)), '-', '_'), ' ', '_') IN (?, ?, ?, ?, ?, ?, ?)",
+                        ['pending', 'qr', 'qr_pending', 'qr_hold', 'hold', 'cooking', 'processing']
                     );
                 })
                 ->lockForUpdate()
@@ -278,7 +305,7 @@ class FrontController extends Controller
                 DB::rollBack();
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'এই টেবিলে আগে থেকেই Pending/QR order আছে। আগের order complete না হওয়া পর্যন্ত নতুন order submit করা যাবে না।',
+                    'message' => 'এই টেবিলে আগে থেকেই Active order আছে। আগের order complete না হওয়া পর্যন্ত নতুন order submit করা যাবে না।',
                 ]);
             }
 
@@ -335,6 +362,7 @@ class FrontController extends Controller
 
             foreach ($cart as $item) {
                 DB::table('order_details')->insert([
+                    'branch_id' => $branchId,
                     'order_id' => $order->id,
                     'product_id' => $item['food_id'],
                     'product_name' => $item['name'],
@@ -346,13 +374,20 @@ class FrontController extends Controller
                 ]);
             }
 
-            Session::forget($cartKey);
             DB::commit();
+            Session::forget($cartKey);
+            // Never reveal table history based solely on the printed/reusable QR token.
+            // Laravel's signed/encrypted session cookie binds this receipt to the ordering browser.
+            Session::put($this->guestReceiptKey($table), [
+                'order_id' => (int) $order->id,
+                'issued_at' => now()->timestamp,
+            ]);
 
             return response()->json(['status' => 'success', 'message' => 'Order placed successfully!']);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => $e->getMessage()]);
+            \Illuminate\Support\Facades\Log::error('QR checkout failed', ['exception' => $e, 'branch_id' => $branchId, 'table_id' => $decoded_id]);
+            return response()->json(['status' => 'error', 'message' => 'Unable to place order. Please try again or ask staff.'], 500);
         }
     }
 
@@ -367,11 +402,11 @@ class FrontController extends Controller
         $decoded_id = $table->id;
         $branchId = $this->branchId($table);
         $cartKey = $this->getCartKey($decoded_id);
-        $cart = Session::get($cartKey, []);
+        $cart = $this->refreshedCart($table);
 
-        $food = $this->branchFoodQuery($branchId)->whereKey($request->food_id)->where('is_available', 1)->first();
+        $food = $this->branchFoodQuery($branchId)->whereKey($request->food_id)->first();
         if (!$food) {
-            return response()->json(['status' => 'error', 'message' => 'Food not found for this branch'], 404);
+            return response()->json(['status' => 'error', 'message' => 'Food is unpublished, unavailable or not eligible for QR dine-in in this branch.'], 404);
         }
 
         $price = $food->discount_price > 0 ? $food->discount_price : $food->base_price;
@@ -388,7 +423,11 @@ class FrontController extends Controller
         }
 
         Session::put($cartKey, $cart);
-        return response()->json(['status' => 'success', 'cart_count' => count($cart)]);
+        return response()->json([
+            'status' => 'success',
+            'cart_count' => count($cart),
+            'item_qty' => (int) ($cart[$food->id]['qty'] ?? 0),
+        ]);
     }
 
     public function updateCartQty(Request $request)
@@ -403,7 +442,6 @@ class FrontController extends Controller
         $branchId = $this->branchId($table);
         $food = $this->branchFoodQuery($branchId)
             ->whereKey($request->food_id)
-            ->where('is_available', 1)
             ->first();
 
         if (!$food) {
@@ -424,7 +462,16 @@ class FrontController extends Controller
             Session::put($cartKey, $cart);
         }
 
-        return response()->json(['status' => 'success', 'cart_count' => count($cart)]);
+        return response()->json([
+            'status' => 'success',
+            'cart_count' => count($cart),
+            'item_qty' => (int) ($cart[$food->id]['qty'] ?? 0),
+        ]);
+    }
+
+    private function guestReceiptKey(Table $table): string
+    {
+        return 'qr_guest_receipt_branch_' . (int) $table->branch_id . '_table_' . (int) $table->id;
     }
 
     public function order($table_id)
@@ -435,30 +482,47 @@ class FrontController extends Controller
         }
         $table_id = $this->canonicalReference($table);
         $decoded_id = $table->id;
+        $receiptKey = $this->guestReceiptKey($table);
+        $receipt = Session::get($receiptKey);
+        $orders = collect();
 
-        $orders = Order::with(['orderDetails', 'review'])
-            ->where('table_id', $decoded_id)
-            ->when(Schema::hasColumn('orders', 'branch_id') && $this->branchId($table), fn ($query) => $query->where('branch_id', $this->branchId($table)))
-            ->where(function ($referenceQuery) {
-                $referenceQuery->where('order_number', 'like', 'QR-%');
-                if (Schema::hasColumn('orders', 'qr_reference')) {
-                    $referenceQuery->orWhere('qr_reference', 'like', 'QR-%');
-                }
-            })
-            ->where(function ($query) {
-                $query->where('status', '!=', 'Completed')
-                    ->orWhere(function ($q) {
-                        $q->where('status', 'Completed')->where('updated_at', '>=', now()->subMinutes(5));
-                    });
-            })
-            ->orderBy('id', 'desc')
-            ->get();
+        // A table QR by itself is NOT authorization to see another guest's order.
+        if (is_array($receipt) && isset($receipt['order_id'], $receipt['issued_at'])
+            && (int) $receipt['issued_at'] > now()->subHours(6)->timestamp) {
+            $order = Order::with(['orderDetails', 'review'])
+                ->whereKey((int) $receipt['order_id'])
+                ->where('table_id', $decoded_id)
+                ->where('branch_id', (int) $table->branch_id)
+                ->where(function ($query) {
+                    $query->where('order_number', 'like', 'QR-%');
+                    if (Schema::hasColumn('orders', 'qr_reference')) {
+                        $query->orWhere('qr_reference', 'like', 'QR-%');
+                    }
+                })->first();
 
-        $orders->each(function (Order $order) {
-            $order->ensureFeedbackToken();
-        });
+            $status = strtolower(trim((string) ($order?->status ?? '')));
+            $finished = in_array($status, ['completed', 'cancelled', 'canceled'], true);
+            $finishedAt = $order?->updated_at;
+            if ($order && (!$finished || ($status === 'completed'
+                && $finishedAt && $finishedAt->gte(now()->subMinutes(5))))) {
+                $order->ensureFeedbackToken();
+                $orders = collect([$order]);
+            } else {
+                Session::forget($receiptKey);
+            }
+        } else {
+            Session::forget($receiptKey);
+        }
 
-        return view('order', compact('table_id', 'decoded_id', 'orders'))->with('decoded_table_id', $decoded_id);
+        return response()->view('order', [
+            'table_id' => $table_id,
+            'decoded_id' => $decoded_id,
+            'orders' => $orders,
+            'decoded_table_id' => $decoded_id,
+        ], 200, [
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'Pragma' => 'no-cache',
+        ]);
     }
 
     public function feedbackForm(string $token)
@@ -583,9 +647,7 @@ class FrontController extends Controller
             'updated_at' => now(),
         ];
 
-        if (Schema::hasColumn('waiter_calls', 'branch_id')) {
-            $waiterCall['branch_id'] = $this->branchId($table);
-        }
+        $waiterCall['branch_id'] = $this->branchId($table);
 
         $waiterCallId = DB::table('waiter_calls')->insertGetId($waiterCall);
         app(AuditLogger::class)->log(
@@ -614,7 +676,7 @@ class FrontController extends Controller
         $order = Order::query()
             ->whereKey($validated['order_id'])
             ->where('table_id', $table->id)
-            ->when(Schema::hasColumn('orders', 'branch_id') && $branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->where('branch_id', $branchId)
             ->where('status', 'Completed')
             ->firstOrFail();
 

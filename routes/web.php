@@ -20,14 +20,6 @@ Route::get('/category_wise_products/{category_id}/{table_id}', [FrontController:
 
 Route::post('/add-to-cart', [FrontController::class, 'addToCart']);
 Route::post('/update-cart-qty', [FrontController::class, 'updateCartQty']);
-Route::post('/checkout-web', [FrontController::class, 'checkout']);
-Route::post('/call-waiter', [FrontController::class, 'callWaiter']);
+Route::post('/checkout-web', [FrontController::class, 'checkout'])->middleware('throttle:8,1');
+Route::post('/call-waiter', [FrontController::class, 'callWaiter'])->middleware('throttle:12,1');
 
-Route::get('/clear', function() {
-    \Illuminate\Support\Facades\Artisan::call('cache:clear');
-    \Illuminate\Support\Facades\Artisan::call('config:clear');
-    \Illuminate\Support\Facades\Artisan::call('config:cache');
-    \Illuminate\Support\Facades\Artisan::call('view:clear');
-    \Illuminate\Support\Facades\Artisan::call('route:clear');
-    return redirect()->back();
-});

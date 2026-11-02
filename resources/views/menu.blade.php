@@ -11,7 +11,7 @@
  <div class="rapp-menu-toolbar">
     <div class="rapp-search-bar">
       <i class="bi bi-search"></i>
-      <input type="text" class="rapp-search-input" placeholder="Search for dishes…">
+      <input type="text" class="rapp-search-input" value="{{ request('search') }}" aria-label="Search dishes" placeholder="Search for dishes…">
     </div>
     <div class="rapp-menu-cats">
       <a href="{{ url('menu_page/'.$table_id) }}" class="rapp-menu-cat-tab active">
@@ -34,9 +34,9 @@
   <main class="rapp-main rapp-main-menu">
     <div id="menuFoodGrid">
 
-      <div id="append-data">
+      <div id="append-data" data-next-page="{{ $categories->nextPageUrl() }}">
           @foreach($categories as $cat)
-              @if($cat->foodItems->count() > 0)
+              @if($cat->food_items_count > 0)
               <div class="rapp-cat-group-head">
                 <span class="rapp-cat-group-emoji">
                      @if($cat->image)
@@ -46,7 +46,7 @@
                      @endif
                 </span>
                 <span class="rapp-cat-group-name">{{ $cat->name }}</span>
-                <span class="rapp-cat-group-count">{{ $cat->foodItems->count() }} items</span>
+                <span class="rapp-cat-group-count">{{ $cat->food_items_count }} items</span>
               </div>
 
               <div class="rapp-food-grid">
@@ -87,13 +87,12 @@
               </div>
               @endif
           @endforeach
+        @if($categories->isEmpty())
+        <div class="px-3 py-5 w-100 text-center text-muted">
+          <p>No matching dishes found.</p>
+        </div>
+        @endif
       </div>
-
-      @if($categories->isEmpty() && request()->get('page', 1) == 1)
-      <div class="px-3 py-5 w-100 text-center text-muted">
-          <p>No food items found right now.</p>
-      </div>
-      @endif
 
       <div class="ajax-load text-center" style="display:none; padding: 20px 0;">
           <div class="spinner-border text-success spinner-border-sm" role="status"></div>
@@ -106,43 +105,5 @@
 @endsection
 
 @section('script')
-<script>
-    let page = 1;
-    let hasMorePages = true;
-
-    $(window).scroll(function() {
-        // ইউজার স্ক্রল করে নিচের দিকে আসলে
-        if($(window).scrollTop() + $(window).height() >= $(document).height() - 150) {
-            if(hasMorePages && !$('.ajax-load').is(':visible')) {
-                page++;
-                loadMoreData(page);
-            }
-        }
-    });
-
-    function loadMoreData(page){
-        $.ajax({
-            url: '?page=' + page,
-            type: "get",
-            beforeSend: function() {
-                $('.ajax-load').show();
-            }
-        })
-        .done(function(data) {
-            // নতুন পেজের HTML থেকে শুধু #append-data এর ভেতরের লুপ বের করে আনা
-            let html = $(data).find('#append-data').html();
-
-            if(html.trim() === "") {
-                hasMorePages = false;
-                $('.ajax-load').html('<p class="text-muted" style="font-size:12px;">No more items</p>');
-                return;
-            }
-            $('.ajax-load').hide();
-            $('#append-data').append(html);
-        })
-        .fail(function(jqXHR, ajaxOptions, thrownError) {
-            $('.ajax-load').hide();
-        });
-    }
-</script>
+@include('include.menu-search-scroll')
 @endsection

@@ -75,7 +75,7 @@
       </div>
       <div class="rapp-cat-oc-info">
         <div class="rapp-cat-oc-name">{{ $cat->name }}</div>
-        <div class="rapp-cat-oc-count">{{ $cat->foodItems->count() }} items</div>
+        <div class="rapp-cat-oc-count">{{ $cat->food_items_count }} items</div>
       </div>
       <i class="bi bi-chevron-right rapp-cat-oc-arrow"></i>
     </a>
@@ -118,6 +118,34 @@
         });
     }
 
+    // Display current server-side cart quantities without changing the existing card design.
+    const qrInitialCart = {{ \Illuminate\Support\Js::from(session('web_cart_table_' . ($decoded_table_id ?? $decoded_id ?? ''), [])) }};
+    const qrQty = {};
+    Object.values(qrInitialCart || {}).forEach(item => {
+        if (item && item.food_id) qrQty[String(item.food_id)] = Number(item.qty) || 0;
+    });
+
+    function updateFoodCard(card, qty) {
+        const wrap = card.find('.rapp-food-add-wrap');
+        const hasItems = qty > 0;
+        wrap.find('.rapp-add-btn').toggle(!hasItems);
+        wrap.find('.rapp-qty-ctrl').css('display', hasItems ? 'flex' : 'none');
+        wrap.find('.rapp-qty-num').text(qty);
+    }
+    window.qrRefreshFoodQuantities = function () {
+        $('.rapp-food-card').each(function () {
+            const card = $(this);
+            updateFoodCard(card, qrQty[String(card.data('food-id'))] || 0);
+        });
+    };
+    window.qrRefreshFoodQuantities();
+
+    function updateCartBadges(response) {
+        $('.rapp-cart-badge, .rapp-nav-badge')
+            .text(response.cart_count)
+            .toggle(Number(response.cart_count) > 0);
+    }
+
     // 1. Add to Cart
     $(document).on('click', '.rapp-add-btn', function() {
         let card = $(this).closest('.rapp-food-card');
@@ -135,8 +163,9 @@
             btn.prop('disabled', false).html('+');
 
             if(res.status === 'success') {
-                $('.rapp-cart-badge').text(res.cart_count).show();
-                $('.rapp-nav-badge').text(res.cart_count).show();
+                qrQty[String(foodId)] = Number(res.item_qty) || 1;
+                updateFoodCard(card, qrQty[String(foodId)]);
+                updateCartBadges(res);
 
                 $('#rappToast .rapp-toast-icon').text('🛒');
                 $('#rappToast .rapp-toast-title').text('Added to Cart');
@@ -146,10 +175,33 @@
             } else {
                 showSweetAlert('error', 'Failed', res.message || 'Failed to add item.');
             }
-        }).fail(function() {
+        }).fail(function(xhr) {
             btn.prop('disabled', false).html('+');
-            showSweetAlert('error', 'Failed', 'Failed to add item. Please try again.');
+            showSweetAlert('error', 'Unavailable', xhr.responseJSON?.message || 'Failed to add item. Please try again.');
         });
+    });
+
+    // Quantity buttons on home/menu/category cards (also works for AJAX-loaded cards).
+    $(document).on('click', '.rapp-qty-btn', function () {
+        const button = $(this);
+        const card = button.closest('.rapp-food-card');
+        const foodId = card.data('food-id');
+        const action = button.index() === 0 ? 'minus' : 'plus';
+        const controls = card.find('.rapp-qty-btn');
+        controls.prop('disabled', true);
+        $.post("{{ url('/update-cart-qty') }}", {
+            table_id: currentTableId, food_id: foodId, action: action
+        }).done(function (res) {
+            if (res.status === 'success') {
+                qrQty[String(foodId)] = Math.max(0, Number(res.item_qty) || 0);
+                updateFoodCard(card, qrQty[String(foodId)]);
+                updateCartBadges(res);
+            } else {
+                showSweetAlert('error', 'Unavailable', res.message || 'Please refresh the menu.');
+            }
+        }).fail(function (xhr) {
+            showSweetAlert('error', 'Unavailable', xhr.responseJSON?.message || 'Please refresh the menu.');
+        }).always(function () { controls.prop('disabled', false); });
     });
 
     // 2. Cart Page: Update Quantity

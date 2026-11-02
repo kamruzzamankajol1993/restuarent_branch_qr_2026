@@ -125,7 +125,7 @@
       @empty
       <div class="px-3 py-5 text-center text-muted">
           <i class="bi bi-receipt" style="font-size: 3rem; opacity: 0.2;"></i>
-          <p class="mt-3">No orders found for this table yet.</p>
+          <p class="mt-3">No order receipt is available in this browser session.</p>
           <a href="{{ url('menu_page/'.$table_id) }}" class="btn rapp-btn-primary btn-sm mt-2">Browse Menu</a>
       </div>
       @endforelse

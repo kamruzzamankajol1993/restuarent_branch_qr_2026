@@ -11,6 +11,7 @@ use App\Models\TaxSetting;
 use App\Models\Waiter;
 use App\Services\QrBranchSettingResolver;
 use App\Services\QrTableContext;
+use App\Services\QrPublishedFood;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -20,7 +21,8 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // Cache schema capability for the duration of a single web request only.
+        $this->app->scoped(QrPublishedFood::class, fn () => new QrPublishedFood());
     }
 
     public function boot(): void
@@ -31,7 +33,7 @@ class AppServiceProvider extends ServiceProvider
 
             // Safe defaults for non-table pages. QR table pages override these below.
             View::share($this->branchViewData($mainBranchId));
-            View::share('customers', Schema::hasTable('customers') ? Customer::query()->orderBy('name')->get() : collect());
+            View::share('customers', collect()); // QR customer data is never globally enumerable.
 
             View::composer('*', function ($view) use ($settings) {
                 $reference = request()->route('table_id');
@@ -55,18 +57,22 @@ class AppServiceProvider extends ServiceProvider
     private function branchViewData(?int $branchId): array
     {
         $settings = app(QrBranchSettingResolver::class);
-        $restaurant = $settings->get(RestaurantSetting::class, $branchId, $branchId === null);
-        $tax = $settings->get(TaxSetting::class, $branchId, $branchId === null);
-        $invoice = $settings->get(InvoiceSetting::class, $branchId, $branchId === null);
-        $pos = $settings->get(PosSetting::class, $branchId, $branchId === null);
+        $restaurant = $settings->get(RestaurantSetting::class);
+        $tax = $settings->get(TaxSetting::class);
+        $invoice = $settings->get(InvoiceSetting::class);
+        $pos = $settings->get(PosSetting::class);
 
         $categoryQuery = FoodCategory::query()->whereNull('parent_category_id')->where('status', 1);
-        if ($branchId && Schema::hasColumn('food_categories', 'branch_id')) {
-            $categoryQuery->where('branch_id', $branchId);
+        if ($branchId) {
+            $categoryQuery->where('branch_id', $branchId)
+                ->whereHas('foodItems', fn ($query) => app(QrPublishedFood::class)->apply($query, (int) $branchId))
+                ->withCount(['foodItems' => fn ($query) => app(QrPublishedFood::class)->apply($query, (int) $branchId)]);
+        } else {
+            $categoryQuery->whereRaw('1 = 0');
         }
 
         $waiterQuery = Waiter::query()->where('status', 1);
-        if ($branchId && Schema::hasColumn('waiters', 'branch_id')) {
+        if ($branchId) {
             $waiterQuery->where('branch_id', $branchId);
         }
 

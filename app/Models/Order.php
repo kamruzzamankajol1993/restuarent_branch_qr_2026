@@ -30,10 +30,10 @@ class Order extends Model
                     ? \App\Models\Table::query()->whereKey($order->table_id)->value('branch_id')
                     : null;
 
-                $order->branch_id = $tableBranchId
-                    ?: (Schema::hasTable('branches')
-                        ? \App\Models\Branch::query()->where('is_main', true)->value('id')
-                        : null);
+                $order->branch_id = $tableBranchId;
+                if (!$order->branch_id) {
+                    throw new \RuntimeException('QR orders require a branch-owned table.');
+                }
             }
         });
     }

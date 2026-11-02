@@ -12,7 +12,7 @@
 <div class="rapp-menu-toolbar">
     <div class="rapp-search-bar">
       <i class="bi bi-search"></i>
-      <input type="text" class="rapp-search-input" placeholder="Search for dishes…">
+      <input type="text" class="rapp-search-input" value="{{ request('search') }}" aria-label="Search dishes" placeholder="Search for dishes…">
     </div>
     <div class="rapp-menu-cats">
       <a href="{{ url('menu_page/'.$table_id) }}" class="rapp-menu-cat-tab">
@@ -47,7 +47,7 @@
         <span class="rapp-cat-group-count">{{ $foodItems->total() }} items</span>
       </div>
 
-      <div class="rapp-food-grid" id="append-food-data">
+      <div class="rapp-food-grid" id="append-food-data" data-next-page="{{ $foodItems->nextPageUrl() }}">
         @foreach($foodItems as $food)
         <div class="rapp-food-card" data-food-id="{{ $food->id }}" data-cat-id="{{ $category->id }}">
           <div class="rapp-food-img">
@@ -82,13 +82,12 @@
           </div>
         </div>
         @endforeach
+        @if($foodItems->isEmpty())
+        <div class="px-3 w-100 text-center text-muted">
+          <p>No matching dishes found in this category.</p>
+        </div>
+        @endif
       </div>
-
-      @if($foodItems->isEmpty() && request()->get('page', 1) == 1)
-      <div class="px-3 w-100 text-center text-muted">
-          <p>No food items found in this category right now.</p>
-      </div>
-      @endif
 
       <div class="ajax-load text-center" style="display:none; padding: 20px 0;">
           <div class="spinner-border text-success spinner-border-sm" role="status"></div>
@@ -101,41 +100,5 @@
 @endsection
 
 @section('script')
-<script>
-    let page = 1;
-    let hasMorePages = true;
-
-    $(window).scroll(function() {
-        if($(window).scrollTop() + $(window).height() >= $(document).height() - 150) {
-            if(hasMorePages && !$('.ajax-load').is(':visible')) {
-                page++;
-                loadMoreData(page);
-            }
-        }
-    });
-
-    function loadMoreData(page){
-        $.ajax({
-            url: '?page=' + page,
-            type: "get",
-            beforeSend: function() {
-                $('.ajax-load').show();
-            }
-        })
-        .done(function(data) {
-            let html = $(data).find('#append-food-data').html();
-
-            if(html.trim() === "") {
-                hasMorePages = false;
-                $('.ajax-load').html('<p class="text-muted" style="font-size:12px;">No more items</p>');
-                return;
-            }
-            $('.ajax-load').hide();
-            $('#append-food-data').append(html);
-        })
-        .fail(function(jqXHR, ajaxOptions, thrownError) {
-            $('.ajax-load').hide();
-        });
-    }
-</script>
+@include('include.menu-search-scroll')
 @endsection
